@@ -144,6 +144,7 @@ class SeggerRTTListener(Iterator):
         return self
 
     def read_blocking(self) -> str:
+        ping_timeout = 0
         while True:
             # Try reading all buffers until some data is available
             for i in range(self._jlink_rtt_num_rx_buffers):
@@ -151,6 +152,11 @@ class SeggerRTTListener(Iterator):
                 if rx_data:
                     return bytes(rx_data).decode('utf-8')
             time.sleep(0.01)
+            ping_timeout += 1
+            if ping_timeout >= 100:
+                ping_timeout = 0
+                #if connection lose there will exception
+                ping_data = self._jlink.memory_read(addr = 0, num_units = 1)
 
     def __next__(self) -> Union[str, Type[StopIteration]]:
         """Read line, blocking mode"""
@@ -186,4 +192,11 @@ if __name__ == '__main__':
         kernel32 = ctypes.windll.kernel32
         kernel32.SetConsoleMode(kernel32.GetStdHandle(-11), 0x01 | 0x02 | 0x04)
 
-    main()
+    is_restart = True
+    while is_restart:
+        try:
+            main()
+        except KeyboardInterrupt:
+            is_restart = False
+        except :
+            print("Connection lost, restarted..." )
