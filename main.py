@@ -42,6 +42,7 @@ class SeggerRTTListener(Iterator):
 
         self._print_fn = print if print_info else (lambda *args, **kwargs: None)
         self._jlink_rtt_num_rx_buffers: int = 0
+        self._jlink_jlink_sn = ""
 
     def _validate_device_name(self, device_name: str) -> bool:
         return device_name.lower() in (self._jlink.supported_device(i).name.lower()
@@ -106,9 +107,35 @@ class SeggerRTTListener(Iterator):
 
         return self._jlink_device_name
 
+    def _get_jlink_sn(self) -> Optional[str]:
+        last_used_jlink_sn_fn = ".jlink_last_used_jlink_sn"
+
+        if not self._jlink_jlink_sn:
+            # Try to read last used device name from file
+            try:
+                with open(last_used_jlink_sn_fn) as f:
+                    self._jlink_jlink_sn = f.read().strip()
+            except FileNotFoundError:
+                self._jlink_jlink_sn = None
+
+            if not self._jlink_jlink_sn:
+                print("Please enter jlink serial name.")
+                self._jlink_jlink_sn = input("Serial name: ")
+
+        with open(last_used_jlink_sn_fn, 'w') as f:
+            f.write(self._jlink_jlink_sn)
+
+        return self._jlink_jlink_sn
+
     def __enter__(self):
-        self._jlink.open()
-        self._print_fn(f"Using JLinkARM.dll v{self._jlink.version} on"
+        try:
+            self._jlink.open(serial_no = self._get_jlink_sn())
+        except ValueError:
+            self._jlink.open()
+            self._jlink_jlink_sn=str(self._jlink.serial_number)
+            self._get_jlink_sn()
+        self._print_fn(f"\r\n\r\n"
+                       f"Using JLinkARM.dll v{self._jlink.version} on"
                        f" J-Link v{self._jlink.hardware_version} running FW {self._jlink.firmware_version}"
                        f"{' (outdated)' if self._jlink.firmware_outdated else ''}")
 
@@ -140,7 +167,8 @@ class SeggerRTTListener(Iterator):
         endian = {0: "Little", 1: "Big"}.get(endian, f"Unknown ({endian})")
         self._print_fn(f"RTT (using {self._jlink_rtt_num_rx_buffers} RX buffers at {self._jlink.speed} kHz)"
                        f" connected to {endian}-Endian {self._jlink.core_name()}"
-                       f" running at {self._jlink.cpu_speed() / 1e6:.3f} MHz")
+                       f" running at {self._jlink.cpu_speed() / 1e6:.3f} MHz"
+                       f"\r\n\r\n")
         return self
 
     def read_blocking(self) -> str:
